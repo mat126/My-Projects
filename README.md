@@ -6,6 +6,12 @@ This repository is a collection of various projects focused on statistics. The p
 
 While these projects might not be groundbreaking, they represent my journey of learning and applying statistical concepts, techniques, and tools. Each project has helped me improve my skills in data analysis, forecasting, and data visualization, and I hope you might find them insightful or useful.
 
+### Repository Structure
+
+- **Iris**: Projects based on the well-known Iris dataset, focusing on data visualization, clustering, and statistical analysis.
+- **Kaggle**: Projects developed using datasets sourced from Kaggle, with a focus on machine learning and predictive modeling.
+- **Other stuff**: Miscellaneous coding exercises and smaller projects, often centered around specific algorithms or statistical methods.
+
 **Note**: The more significant projects will have their own dedicated repositories, which will be linked from here. This way, you can explore them in more detail if you're interested.
 
 Feel free to explore the repository, and if you have any suggestions or ideas for improvement, I would love to hear from you!
