@@ -1,0 +1,154 @@
+---
+title: "Plot_PCA_iris"
+author: "Matteo Morella"
+output: html_document
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+---
+
+```{r}
+library(car)
+library(ggplot2)
+library(GGally)
+```
+
+
+```{r}
+data("iris")
+matrice_iris <- as.matrix(iris[, 1:4])
+
+medie <- apply(matrice_iris, 2, mean)
+
+mat_centrata <- sweep(matrice_iris, 2, medie)
+
+mat_var_cov <- (1/(nrow(matrice_iris)-1)) * t(mat_centrata) %*% mat_centrata
+
+sd <- sqrt(diag(mat_var_cov))
+
+mat_sd <- diag(1/sd)
+
+corr <- mat_sd %*% mat_var_cov %*% mat_sd
+
+corr
+
+var(matrice_iris)
+mat_var_cov
+
+auto <- eigen(var(matrice_iris))
+primo <- auto$values[1]
+primovect <- auto$vectors[, 1]
+y_1 <- matrice_iris %*% primovect
+var(matrice_iris %*% primovect)
+y_2 <- matrice_iris %*% auto$vectors[, 2]
+
+media_prima <- mean(y_1)
+media_seconda <- mean(y_2)
+```
+
+```{r}
+
+plot(y_1, y_2, col = c(as.numeric(as.factor(iris$Species))), pch = 20, 
+      xlab = paste("Prima Componente Principale (Media:", round(media_prima, 3), ")"), 
+      ylab = paste("Seconda Componente Principale (Media:", round(media_seconda, 3), ")"))
+
+legend("topright", legend = levels(iris$Species), col = 1:3, pch = 20)
+
+drawEllipseWithFullAxes <- function(x, y, col, level = 0.5) {
+  
+  dataEllipse(x, y, levels = level, add = TRUE, col = col, fill = TRUE)
+  
+  cov_matrix <- cov(cbind(x, y))
+  
+  eig <- eigen(cov_matrix)
+  
+  center <- c(mean(x), mean(y))
+  
+  radii <- sqrt(qchisq(level, df = 2)) * sqrt(eig$values)
+  
+  segments(center[1], center[2], 
+           center[1] + radii[1] * eig$vectors[1, 1], 
+           center[2] + radii[1] * eig$vectors[2, 1], 
+           col = col, lwd = 2, lty = 1)  # Asse principale
+
+  segments(center[1], center[2], 
+           center[1] - radii[1] * eig$vectors[1, 1], 
+           center[2] - radii[1] * eig$vectors[2, 1], 
+           col = col, lwd = 2, lty = 1)  # Asse principale in direzione opposta
+
+  segments(center[1], center[2], 
+           center[1] + radii[2] * eig$vectors[1, 2], 
+           center[2] + radii[2] * eig$vectors[2, 2], 
+           col = col, lwd = 2, lty = 1)  # Asse secondario
+
+  segments(center[1], center[2], 
+           center[1] - radii[2] * eig$vectors[1, 2], 
+           center[2] - radii[2] * eig$vectors[2, 2], 
+           col = col, lwd = 2, lty = 1)  # Asse secondario in direzione opposta
+}
+
+drawEllipseWithFullAxes(y_1[iris$Species == "setosa"], y_2[iris$Species == "setosa"], col = 1)
+
+drawEllipseWithFullAxes(y_1[iris$Species == "versicolor"], y_2[iris$Species == "versicolor"], col = 2)
+drawEllipseWithFullAxes(y_1[iris$Species == "virginica"], y_2[iris$Species == "virginica"], col = 3)
+```
+
+Ora lo faccio con ggplot
+
+```{r}
+df_pca <- data.frame(
+  PC1 = y_1,
+  PC2 = y_2,
+  Species = iris$Species
+)
+
+p <- ggplot(df_pca, aes(x = PC1, y = PC2, color = Species)) +
+  geom_point(size = 2) +
+  stat_ellipse(aes(fill = Species), level = 0.95, alpha = 0.3, linetype = "solid") +
+  theme_minimal() +
+  scale_fill_manual(values = c("setosa" = "black", "versicolor" = "red", "virginica" = "green")) +  # Colori delle ellissi
+  scale_color_manual(values = c("setosa" = "black", "versicolor" = "red", "virginica" = "green")) +  
+  labs(x = paste("Prima Componente Principale (Media:", round(mean(y_1), 3), ")"),
+       y = paste("Seconda Componente Principale (Media:", round(mean(y_2), 3), ")"),
+       title = "PCA delle specie di Iris") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Assi delle ellissi
+drawEllipseAxes <- function(data, color) {
+  cov_matrix <- cov(cbind(data$PC1, data$PC2))
+  eig <- eigen(cov_matrix)
+  center <- colMeans(data[, c("PC1", "PC2")])
+  radii <- sqrt(qchisq(0.95, df = 2)) * sqrt(eig$values)
+
+  # Asse principale
+  p <- p + geom_segment(aes(x = center[1], y = center[2],
+                             xend = center[1] + radii[1] * eig$vectors[1, 1],
+                             yend = center[2] + radii[1] * eig$vectors[2, 1]),
+                        color = color, linetype = "dashed", size = 1)
+
+  p <- p + geom_segment(aes(x = center[1], y = center[2],
+                             xend = center[1] - radii[1] * eig$vectors[1, 1],
+                             yend = center[2] - radii[1] * eig$vectors[2, 1]),
+                        color = color, linetype = "dashed", size = 1)
+
+  # Asse secondario
+  p <- p + geom_segment(aes(x = center[1], y = center[2],
+                             xend = center[1] + radii[2] * eig$vectors[1, 2],
+                             yend = center[2] + radii[2] * eig$vectors[2, 2]),
+                        color = color, linetype = "dashed", size = 1)
+
+  p <- p + geom_segment(aes(x = center[1], y = center[2],
+                             xend = center[1] - radii[2] * eig$vectors[1, 2],
+                             yend = center[2] - radii[2] * eig$vectors[2, 2]),
+                        color = color, linetype = "dashed", size = 1)
+
+  return(p)
+}
+
+
+p <- drawEllipseAxes(df_pca[df_pca$Species == "setosa", ], "black")
+p <- drawEllipseAxes(df_pca[df_pca$Species == "versicolor", ], "red")
+p <- drawEllipseAxes(df_pca[df_pca$Species == "virginica", ], "green")
+
+p
+
+```
+

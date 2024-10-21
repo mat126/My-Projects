@@ -1,0 +1,437 @@
+---
+title: "Titanic"
+author: "Matteo Morella"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    css: "custom.css"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.height = 7, fig.width =  15, fig.align = "center")
+```
+
+
+# Packages and dataset
+
+```{r Packages}
+library(gtsummary)
+library(dplyr)
+library(ggplot2)
+library(viridis)
+library(hrbrthemes)
+library(naniar)
+library(tidyr)
+library(pROC)
+library(caret)
+library(MASS)
+library(klaR)
+library(ranger)
+library(xgboost)
+library(e1071)
+library(nnet)
+library(missForest)
+```
+
+
+```{r Data}
+data_train <- read.csv("~/Kaggle_Titanic/train.csv")
+data_test <- read.csv("~/Kaggle_Titanic/test.csv")
+gender_submission <- read.csv("~/Kaggle_Titanic/gender_submission.csv")
+head(data_train, 5)
+head(data_test, 5)
+```
+# Data description
+
+**survival**	Survival	0 = No, 1 = Yes
+
+**pclass**	Ticket class	1 = 1st, 2 = 2nd, 3 = 3rd: 1st = Upper; 2nd = Middle; 3rd = Lower
+
+**sex**	Sex	
+
+**Age**	Age in years: Age is fractional if less than 1. If the age is estimated, is it in the form of xx.5
+
+**sibsp**	# of siblings / spouses aboard the Titanic: The dataset defines family relations in this way...
+Sibling = brother, sister, stepbrother, stepsister
+Spouse = husband, wife (mistresses and fiancés were ignored)
+
+**parch**	# of parents / children aboard the Titanic: The dataset defines family relations in this way...
+Parent = mother, father
+Child = daughter, son, stepdaughter, stepson
+Some children travelled only with a nanny, therefore parch=0 for them.
+
+**ticket**	Ticket number	
+
+**fare**	Passenger fare	
+
+**cabin**	Cabin number	
+
+**embarked**	Port of Embarkation	C = Cherbourg, Q = Queenstown, S = Southampton
+
+
+```{r Modifiche dati}
+data_train <- data_train %>%
+  mutate(across(c(Survived, Pclass, Sex, Embarked), as.factor))
+
+data_test <- data_test %>%
+  mutate(across(c(Pclass, Sex, Embarked), as.factor))
+```
+
+
+```{r Table summary}
+
+tbl_summary(data_train, include = c(Survived, Pclass, Sex, SibSp, Parch, Embarked))
+tbl_summary(data_test, include = c(Pclass, Sex, SibSp, Parch, Embarked))
+
+```
+
+## Age distribution
+
+
+```{r Histogram age}
+ggplot(data_train, aes(x = Age)) +
+  geom_histogram(aes(y = ..density..), fill = "#69b3a2", color = "black", alpha = 0.7, bins = 30) +
+  geom_density(color = "blue", size = 1.2, linetype = "dashed") + # Linea di densità sovrapposta
+  stat_bin(
+    aes(y = ..density.., label = ifelse(..density.. == max(..density..), round(..x.., 1), "")),
+    geom = "text", vjust = -0.5, bins = 30, color = "black", size = 4
+  ) +
+  labs(title = "Distribution of Age",
+       x = "Age",
+       y = "Density") +
+  theme_bw(base_size = 15) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),  # Centra e grassetta il titolo
+    axis.title = element_text(face = "bold"),               # Titoli degli assi in grassetto
+    axis.text = element_text(color = "darkblue")            # Colore del testo degli assi
+  )
+
+```
+
+```{r Histogram age ~ sex}
+
+ggplot(data_train, aes(x = Age, fill = Sex)) +
+  geom_histogram(aes(y = ..density..), position = "identity", alpha = 0.7, bins = 30, color = "black") + 
+  geom_density(aes(y = ..density..), color = "blue", size = 1.2, linetype = "dashed", fill = NA) +  # Solo linea tratteggiata
+  labs(title = "Distribution of Age by Sex",
+       x = "Age",
+       y = "Density") +
+  scale_fill_manual(values = c("darkorchid2", "darkturquoise")) +  # Colori personalizzati
+  facet_wrap(~ Sex, scales = "free_x") +  # Faceting per sesso
+  theme_bw(base_size = 15) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),  # Centra e grassetta il titolo
+    axis.title = element_text(face = "bold"),               # Titoli degli assi in grassetto
+    axis.text = element_text(color = "darkblue")            # Colore del testo degli assi
+  )
+
+```
+
+```{r age ~ class}
+ggplot(data_train, aes(x = Age, fill = Pclass)) +
+  geom_histogram(aes(y = ..density..), position = "identity", alpha = 0.7, bins = 30, color = "black") + 
+  geom_density(aes(y = ..density..), color = "blue", size = 1.2, linetype = "dashed", fill = NA) +  # Solo linea tratteggiata
+  labs(title = "Distribution of Age by socio-economic status",
+       x = "Age",
+       y = "Density") +
+  scale_fill_manual(values = c("darkorchid2", "darkturquoise", "orange")) +  # Colori personalizzati
+  facet_wrap(~ Pclass, scales = "free_x") +  # Faceting per sesso
+  theme_bw(base_size = 15) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),  # Centra e grassetta il titolo
+    axis.title = element_text(face = "bold"),               # Titoli degli assi in grassetto
+    axis.text = element_text(color = "darkblue")            # Colore del testo degli assi
+  )
+```
+
+## Fare distribution
+
+
+```{r hist fare}
+
+ggplot(data_train, aes(x = Fare)) +
+  geom_density(aes(y = ..density..), fill = "darkgreen", alpha = 0.7) +
+  labs(title = "Density of Fare",
+       x = "Fare",
+       y = "Density") +
+  theme_bw(base_size = 15) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),  # Centra e grassetta il titolo
+    axis.title = element_text(face = "bold"),               # Titoli degli assi in grassetto
+    axis.text = element_text(color = "darkblue")            # Colore del testo degli assi
+  )
+```
+
+```{r fare ~ class}
+
+ggplot(data_train, aes(x = Fare, fill = Pclass)) +
+  geom_histogram(aes(y = ..density..), position = "identity", alpha = 0.7, bins = 30, color = "black") + 
+  labs(title = "Distribution of Fare by socio-economic status",
+       x = "Fare",
+       y = "Density") +
+  scale_fill_manual(values = c("darkorchid2", "darkturquoise", "orange")) +  # Colori personalizzati
+  facet_wrap(~ Pclass, scales = "free_x") +  # Faceting per sesso
+  theme_bw(base_size = 15) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),  # Centra e grassetta il titolo
+    axis.title = element_text(face = "bold"),               # Titoli degli assi in grassetto
+    axis.text = element_text(color = "darkblue")            # Colore del testo degli assi
+  )
+
+```
+
+```{r Box-plot fare}
+data_train %>%
+  ggplot( aes(x = Pclass, y = Fare, fill = Pclass)) +
+       geom_boxplot() +
+    scale_fill_viridis(discrete = TRUE, alpha = 0.8) +
+    geom_jitter(color="black", size = 0.3, alpha = 2) +
+    theme_ipsum() +
+    theme(
+      legend.position="none",
+      plot.title = element_text(size=14)
+    ) +
+    ggtitle("Boxplot for Fare") +
+    xlab("Status")
+```
+
+# Handling missing values
+
+```{r}
+gg_miss_var(data_train)
+```
+
+```{r}
+gg_miss_var(data_test)
+```
+
+
+```{r}
+set.seed(1234)
+
+data_train_impute <- data_train[, c("Survived", "Pclass", "Sex", "Age", "SibSp", "Parch", "Fare"), drop = FALSE]
+imputed_data_train <- missForest(data_train_impute)
+new_data_train <- imputed_data_train$ximp
+dim(new_data_train)
+dim(data_train)
+table(is.na(new_data_train$Age))
+
+
+data_test_impute <- data_test[, c("Pclass", "Sex", "Age", "SibSp", "Parch", "Fare"), drop = FALSE]
+imputed_data_test <- missForest(data_test_impute)
+new_data_test <- imputed_data_test$ximp
+table(is.na(new_data_test$Age))
+table(is.na(new_data_test$Fare))
+
+```
+
+
+# Data modeling
+
+## Logistic regression
+```{r Logit}
+
+mod_logit1 <- glm(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare, data = new_data_train, family = binomial)
+
+summary(mod_logit1)
+
+predict_logit1 <- predict.glm(mod_logit1, newdata = new_data_train, type = "response")
+
+roc_logit1 <- roc(new_data_train$Survived ~ predict_logit1, plot = T)
+legend("bottomright", legend = paste("AUC =", round(auc(roc_logit1), 4)), lwd = 2, box.lwd = 0, bg = "white")
+
+
+confusione1.1 <- confusionMatrix(as.factor(ifelse(predict_logit1>0.5, 1, 0)), as.factor(new_data_train$Survived)) 
+confusione1.1
+
+```
+
+```{r Stepwise}
+
+step1 <- step(mod_logit1, direction = "both", scope = .~(.)^2, trace = 2)
+
+```
+
+
+```{r Logit interazioni}
+mod_logit2 <- glm(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Pclass:Sex + 
+    Pclass:Parch + Age:SibSp + Age:Parch + Age:Fare + Pclass:Fare + 
+    Sex:Age, data = new_data_train, family = binomial)
+
+summary(mod_logit2)
+
+predict_logit2 <- predict.glm(mod_logit2, newdata = new_data_train, type = "response")
+
+roc_logit2 <- roc(new_data_train$Survived ~ predict_logit2, plot = T)
+legend("bottomright", legend = paste("AUC =", round(auc(roc_logit2), 4)), lwd = 2, box.lwd = 0, bg = "white")
+
+
+confusione1.2 <- confusionMatrix(as.factor(ifelse(predict_logit2>0.5, 1, 0)), as.factor(new_data_train$Survived)) 
+confusione1.2
+```
+
+## Discriminant analysis
+
+```{r LDA}
+mod_lda <- lda(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare, data = new_data_train)
+
+summary(mod_lda)
+
+predict_lda <- predict(mod_lda, newdata = new_data_train)
+lda_class <- predict_lda$class
+lda_values <- predict_lda$posterior[, 2]
+
+roc_lda <- roc(new_data_train$Survived ~ lda_values, plot = T)
+legend("bottomright", legend = paste("AUC =", round(auc(roc_lda), 4)), lwd = 2, box.lwd = 0, bg = "white")
+
+confusione_lda <- confusionMatrix(as.factor(lda_class), as.factor(new_data_train$Survived))
+confusione_lda
+
+
+```
+
+```{r RDA}
+
+mod_rda <- rda(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare, data = new_data_train)
+
+summary(mod_rda)
+
+predict_rda <- predict(mod_rda, newdata = new_data_train)
+rda_class <- predict_lda$class
+rda_values <- predict_lda$posterior[, 2]
+
+roc_rda <- roc(new_data_train$Survived ~ rda_values, plot = T)
+legend("bottomright", legend = paste("AUC =", round(auc(roc_lda), 4)), lwd = 2, box.lwd = 0, bg = "white")
+
+confusione_rda <- confusionMatrix(as.factor(rda_class), as.factor(new_data_train$Survived))
+confusione_rda
+
+```
+
+## Tree based Model
+
+```{r Random Forest}
+set.seed(1234)
+mod_rf <- ranger(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare,
+                     data = new_data_train, num.trees = 500, mtry = 3, 
+                     seed = 42, probability = T)
+
+mod_rf_predict <- ranger(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare,
+                     data = new_data_train, num.trees = 500, mtry = 3, 
+                     seed = 42)
+summary(mod_rf)
+
+
+predict_rf1 <- predict(mod_rf, data = new_data_train)
+predict_rf2 <- predict_rf1$predictions[, 2]
+class_predict_rf <- predict(mod_rf_predict, data = new_data_train)
+
+confusione_rf <- confusionMatrix(as.factor(class_predict_rf$predictions), as.factor(new_data_train$Survived))
+confusione_rf
+
+roc_rf <- roc(new_data_train$Survived ~ as.numeric(predict_rf2), plot = T)
+legend("bottomright", legend = paste("AUC =", round(auc(roc_rf), 4)), lwd = 2, box.lwd = 0, bg = "white")
+
+       
+```
+
+```{r Bagging}
+
+set.seed(5678)
+mod_bagging <- ranger(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare,
+                     data = new_data_train, num.trees = 500, mtry = 6, seed = 42, probability = T)
+mod_bagging_pred <- ranger(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare,
+                     data = new_data_train, num.trees = 500, mtry = 6, seed = 42)
+
+predict_bagging <- predict(mod_bagging, data = new_data_train)
+predict_bagging.1 <- predict_bagging$predictions[, 2]
+predict_bagging_class <- predict(mod_bagging_pred, data = new_data_train)
+
+confusione_bagging <- confusionMatrix(as.factor(predict_bagging_class$predictions), as.factor(new_data_train$Survived))
+confusione_bagging
+
+roc_bagging <- roc(new_data_train$Survived ~ as.numeric(predict_bagging.1), plot = T)
+legend("bottomright", legend = paste("AUC =", round(auc(roc_bagging), 4)), lwd = 2, box.lwd = 0, bg = "white")
+
+```
+
+## Neural network
+
+```{r Neural Net}
+mod_nnet <- nnet(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare, data = new_data_train, size = 10, maxit = 1000, linout = FALSE)
+
+predict_nnet <- predict(mod_nnet, data = new_data_train)
+
+confusione_nnet <- confusionMatrix(as.factor(ifelse(predict_nnet >0.5, 1, 0)), as.factor(new_data_train$Survived))
+confusione_nnet
+
+roc_nnet <- roc(new_data_train$Survived ~ as.numeric(predict_nnet), plot = T)
+legend("bottomright", legend = paste("AUC =", round(auc(roc_nnet), 4)), lwd = 2, box.lwd = 0, bg = "white")
+
+```
+
+## Model selection
+
+```{r}
+accuracy_comparison <- cbind(
+  round(confusione1.1$overall["Accuracy"], 5), 
+  round(confusione1.2$overall["Accuracy"], 5), 
+  round(confusione_lda$overall["Accuracy"], 5), 
+  round(confusione_rda$overall["Accuracy"], 5), 
+  round(confusione_rf$overall["Accuracy"], 5), 
+  round(confusione_bagging$overall["Accuracy"], 5), 
+  round(confusione_nnet$overall["Accuracy"], 5)
+)
+
+colnames(accuracy_comparison) <- c("Logit", "Logit2", "LDA", "RDA", "RandomForest", "Bagging", "NeuralNetwork")
+
+roc_comparison <- cbind(
+  round(auc(roc_logit1), 5), 
+  round(auc(roc_logit2), 5), 
+  round(auc(roc_lda), 5), 
+  round(auc(roc_rda), 5), 
+  round(auc(roc_rf), 5), 
+  round(auc(roc_bagging), 5), 
+  round(auc(roc_nnet), 5))
+
+colnames(roc_comparison) <- c("Logit", "Logit2", "LDA", "RDA", "RandomForest", "Bagging", "NeuralNetwork")
+
+acc_auc <- rbind(accuracy_comparison, roc_comparison)
+
+rownames(acc_auc) <- c("Accuracy", "AUC")
+acc_auc
+```
+
+# Final result
+
+```{r}
+
+test_resutl_rf <- predict(mod_rf_predict, data = new_data_test)
+head(test_resutl_rf$predictions)
+
+test_resutl_bagging <- predict(mod_bagging_pred, data = new_data_test)
+head(test_resutl_bagging$predictions)
+
+test_result_nnet <- predict(mod_nnet, newdata = new_data_test, type = "class")
+head(test_result_nnet)
+
+```
+
+```{r}
+
+submission_rf <- gender_submission
+submission_rf$Survived <- test_resutl_rf$predictions
+write.csv(submission_rf, "submission_rf.csv", row.names = F)
+
+submission_bag <- gender_submission
+submission_bag$Survived <- test_resutl_bagging$predictions
+write.csv(submission_bag, "submission_bagging.csv", row.names = F)
+
+submission_nnet <- gender_submission
+submission_nnet$Survived <- test_result_nnet
+write.csv(submission_nnet, "submission_nnet.csv", row.names = F)
+```
+

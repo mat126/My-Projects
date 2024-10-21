@@ -1,0 +1,308 @@
+---
+title: "Esercizi su copertura di un intervallo fiduciario e algoritmo di Marsaglia"
+author: "Matteo Morella"
+output:
+  html_document:
+    toc: true          # Abilita il sommario
+    toc_float: true    # Sommario flottante (menu a destra)
+    toc_depth: 3
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.height = 13, fig.width =  15, fig.align = "center")
+```
+
+# Esercizio 1
+
+Studiare la copertuta dell’intervallo fiduciario al variare della numerosità campionaria $n=3,5,7,30,50$. Discutere, aiutandosi con un grafico, dei risultati.
+
+
+```{r}
+library(ggplot2)
+```
+
+```{r}
+alfaNominale <- 0.10
+coperturaNominale <- 1 - alfaNominale
+pctZ <- qnorm(1 - alfaNominale / 2)
+muZero  <- 0
+sigmaZero <- 1
+numeroRepliche <- 200
+
+risultati <- data.frame(n = integer(), limiteInf = numeric(), limiteSup = numeric(), esperimento = integer(), copertura = integer())
+
+```
+
+Ho leggermente modificato il ciclo in modo tale da andare a ciclare anche il vettore esterno numero di ripetizioni che va a variare 
+
+```{r}
+set.seed(20191025)
+for (n in c(3, 5, 7, 30, 50)) {
+    coperturaEmpirica <- rep(0, numeroRepliche)  
+
+    for (r in 1:numeroRepliche) {
+        campione <- rnorm(n, mean = muZero, sd = sigmaZero)
+        media <- mean(campione)
+        limiteInf <- media - pctZ * sigmaZero / sqrt(n)
+        limiteSup <- media + pctZ * sigmaZero / sqrt(n)
+        
+
+        copertura <- ifelse(muZero > limiteInf & muZero < limiteSup, 1, 0)
+        coperturaEmpirica[r] <- copertura
+
+
+        risultati <- rbind(risultati, data.frame(n = n, limiteInf = limiteInf, limiteSup = limiteSup, esperimento = r, copertura = copertura))
+    }
+
+    
+    numCopertura <- sum(coperturaEmpirica)
+    coperturaEmpiricaMedia <- mean(coperturaEmpirica)
+    message("Per n = ", n, ", l'intervallo fiduciario contiene il valore atteso della popolazione ", numCopertura, " volte su ", numeroRepliche, 
+            ", il che corrisponde a una copertura empirica di ", round(coperturaEmpiricaMedia * 100, 2), "%.")
+
+    # Calcolo p-value
+    zc <- abs(coperturaEmpiricaMedia - coperturaNominale)
+    zc <- zc / sqrt(coperturaNominale * (1 - coperturaNominale) / numeroRepliche)
+    p_value <- round(2 * pnorm(zc, lower.tail = FALSE), 4)
+    
+    message("Per n = ", n, ", il p-value è ", p_value, ".")
+}
+
+```
+
+Per completezza vado a testare i miei risultati in presenza di un seed diverso
+
+```{r}
+set.seed(1234)
+
+for (n in c(3, 5, 7, 30, 50)) {
+    coperturaEmpirica <- rep(0, numeroRepliche)
+
+    for (r in 1:numeroRepliche) {
+        campione <- rnorm(n, mean = muZero, sd = sigmaZero)
+        media <- mean(campione)
+        limiteInf <- media - pctZ * sigmaZero / sqrt(n)
+        limiteSup <- media + pctZ * sigmaZero / sqrt(n)
+        
+
+        copertura <- ifelse(muZero > limiteInf & muZero < limiteSup, 1, 0)
+        coperturaEmpirica[r] <- copertura
+
+
+        risultati <- rbind(risultati, data.frame(n = n, limiteInf = limiteInf, limiteSup = limiteSup, esperimento = r, copertura = copertura))
+    }
+
+    
+    numCopertura <- sum(coperturaEmpirica)
+    coperturaEmpiricaMedia <- mean(coperturaEmpirica)
+    message("Per n = ", n, ", l'intervallo fiduciario contiene il valore atteso della popolazione ", numCopertura, " volte su ", numeroRepliche, 
+            ", il che corrisponde a una copertura empirica di ", round(coperturaEmpiricaMedia * 100, 2), "%.")
+
+    # Calcolo p-value
+    zc <- abs(coperturaEmpiricaMedia - coperturaNominale)
+    zc <- zc / sqrt(coperturaNominale * (1 - coperturaNominale) / numeroRepliche)
+    p_value <- round(2 * pnorm(zc, lower.tail = FALSE), 4)
+    
+    message("Per n = ", n, ", il p-value è ", p_value, ".")
+}
+```
+
+
+```{r}
+ggplot(risultati, aes(x = esperimento)) +
+    geom_segment(aes(xend = esperimento, y = limiteInf, yend = limiteSup, color = factor(copertura)), size = 1) +
+    geom_point(aes(y = limiteInf, color = factor(copertura)), size = 2) +
+    geom_point(aes(y = limiteSup, color = factor(copertura)), size = 2) +
+    facet_wrap(~ n, scales = "free_y", ncol = 1) +  # Creazione di un pannello per ogni n
+    labs(title = "Intervalli Fiduciali per Valori Attesi di una Gaussiana",
+         x = "Esperimenti",
+         y = "Intervallo Fiduciale",
+         color = "Copertura") +
+    scale_color_manual(values = c("1" = "gray25", "0" = "red"), labels = c("Copertura", "Non Copertura")) +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+```
+
+## Interpretazione dei risultati
+
+Riguardo la copertura empirica si nota come da $n = 5$ la copertura tende ad oscillare intorno al valore soglia del $90\%$. Embelmatico il caso di $n = 30$ per cui la copertura essendo esattamente al $90\%$ porta ad avere anche un pvalue pari a 1.
+
+In proposito proprio del pvalue si nota che per ogni numerosità, le deviazioni dalla copertura nominale, dato $H_0=90\%$, non siano statisticamente significative. Per $n=5$ abbiamo l'unico pvalue basso ma comunque accettabile. 
+
+Andando a cambiare seed si nota come le coperture cambino. In particolare per $n=30$ si ha la copertura più alta pari al $95\%$, risultato che si riflette anche nel pvalue basso, che sta ad indicare differenze significative nella copertura. 
+
+# Esercizio 2
+
+Assumendo che la varianza della popolazione sia non nota, ripetere l’esercizio (1).
+
+Visto che la varianza è non nota utilizzo la distribuzione t di Student invece della normale
+
+```{r}
+set.seed(20191025)
+
+alfaNominale_t <- 0.10
+coperturaNominale_t <- 1 - alfaNominale
+n_values_t <- c(3, 5, 7, 30, 50)  # dimensioni campionarie
+numeroRepliche_t <- 200
+results_t <- list()  # lista per memorizzare i risultati
+
+# Ciclo per le diverse dimensioni campionarie
+for (n in n_values_t) {
+  coperturaEmpirica_t <- rep(0, numeroRepliche_t)
+  limiteInf_t <- rep(0, numeroRepliche_t)
+  limiteSup_t <- rep(0, numeroRepliche_t)
+
+  for (r in 1:numeroRepliche_t) {
+    campione_t <- rnorm(n, mean = 0, sd = 1)
+    media_t <- mean(campione_t)
+    s_t <- sd(campione_t)  
+    df_t <- n - 1
+    pctT <- qt(1 - alfaNominale_t / 2, df_t)  
+
+    limiteInf_t[r] <- media_t - pctT * s_t / sqrt(n)
+    limiteSup_t[r] <- media_t + pctT * s_t / sqrt(n)
+
+    if (0 > limiteInf_t[r] & 0 < limiteSup_t[r]) {
+      coperturaEmpirica_t[r] <- 1
+    }
+  }
+  
+    results_t <- rbind(results_t, data.frame(
+    n = n,
+    esperimento = 1:numeroRepliche_t,
+    limiteInf = limiteInf_t,
+    limiteSup = limiteSup_t,
+    copertura = coperturaEmpirica_t
+  ))
+
+  copertura_empirica_media_t <- mean(coperturaEmpirica_t)
+  p_value_t <- abs(copertura_empirica_media_t - coperturaNominale_t) / 
+             sqrt(coperturaNominale_t * (1 - coperturaNominale_t) / numeroRepliche_t)
+  p_value_t <- round(2 * pnorm(p_value_t, lower.tail = FALSE), 4)
+
+  message("Per n = ", n, ", l'intervallo fiduciario contiene il valore atteso della popolazione ", 
+          sum(coperturaEmpirica_t), " volte su ", numeroRepliche_t, ".")
+  message("Copertura empirica: ", round(copertura_empirica_media_t * 100, 2), "%.")
+  message("Il p-value è ", p_value_t, ".\n")
+}
+```
+
+```{r}
+ggplot(results_t, aes(x = esperimento)) +
+  geom_segment(aes(xend = esperimento, y = limiteInf, yend = limiteSup, color = factor(copertura)), size = 1) +
+  geom_point(aes(y = limiteInf, color = factor(copertura)), size = 2) +
+  geom_point(aes(y = limiteSup, color = factor(copertura)), size = 2) +
+  facet_wrap(~ n, scales = "free_y", ncol = 1) +  # Creazione di un pannello per ogni n
+  labs(title = "Intervalli Fiduciali per Valori Attesi di una Gaussiana",
+       x = "Esperimenti",
+       y = "Intervallo Fiduciale",
+       color = "Copertura") +
+  scale_color_manual(values = c("1" = "gray25", "0" = "red"), labels = c("Copertura", "Non Copertura")) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+
+## Interpretazione dei risultati
+
+In questo caso con la varianza ignota la copertura empirica si comporta in modo controintuitivo, essendo superiore al $90\%$ per numerosità campionarie piccole (5, 7, 30) o addirittura pari al $100\%$ per $n = 3$ e inferiore di molto per $n = 50$, cosa che si riflette nei pvalue in cui quello per 50 è molto basso (inferiore al $10\%$).
+ 
+ 
+# Esercizio 3
+ 
+Considerando un popolazione di Cauchy, ripetere l’esercizio (2).
+ 
+```{r}
+set.seed(20191025)
+
+alfaNominale_c <- 0.10
+coperturaNominale_c <- 1 - alfaNominale_t
+n_values_c <- c(3, 5, 7, 30, 50)  # dimensioni campionarie
+numeroRepliche_c <- 200
+results_c <- data.frame()  # dataframe per memorizzare i risultati
+
+# Ciclo per le diverse dimensioni campionarie
+for (n in n_values_c) {
+  coperturaEmpirica_c <- rep(0, numeroRepliche_c)
+  limiteInf_c <- rep(0, numeroRepliche_c)
+  limiteSup_c <- rep(0, numeroRepliche_c)
+
+  for (r in 1:numeroRepliche_c) {
+    campione_c <- rcauchy(n)  # Genera un campione da una distribuzione di Cauchy
+    mediana_c <- median(campione_c)
+    q1_c <- quantile(campione_c, 0.05)  
+    q2_c <- quantile(campione_c, 0.95)  
+
+    limiteInf_c[r] <- mediana_c - (q2_c - q1_c) / 2
+    limiteSup_c[r] <- mediana_c + (q2_c - q1_c) / 2
+
+    if (0 > limiteInf_c[r] & 0 < limiteSup_c[r]) {
+      coperturaEmpirica_c[r] <- 1
+    }
+  }
+
+  results_c <- rbind(results_c, data.frame(
+    n = n,
+    esperimento_c = 1:numeroRepliche_c,
+    limiteInf_c = limiteInf_c,
+    limiteSup_c = limiteSup_c,
+    copertura_c = coperturaEmpirica_c
+  ))
+
+  copertura_empirica_media_c <- mean(coperturaEmpirica_c)
+  p_value_c <- abs(copertura_empirica_media_c - coperturaNominale_c) / 
+             sqrt(coperturaNominale_c * (1 - coperturaNominale_c) / numeroRepliche_c)
+  p_value_c <- round(2 * pnorm(p_value_c, lower.tail = FALSE), 4)
+
+  message("Per n = ", n, ", l'intervallo fiduciano contiene il valore atteso della popolazione ", 
+          sum(coperturaEmpirica_c), " volte su ", numeroRepliche_c, ".")
+  message("Copertura empirica: ", round(copertura_empirica_media_c * 100, 2), "%.")
+  message("Il p-value è ", p_value_c, ".\n")
+}
+
+```
+ 
+```{r}
+
+ggplot(results_c, aes(x = esperimento_c)) +
+  geom_segment(aes(xend = esperimento_c, y = limiteInf_c, yend = limiteSup_c, color = factor(copertura_c)), size = 1) +
+  geom_point(aes(y = limiteInf_c, color = factor(copertura_c)), size = 2) +
+  geom_point(aes(y = limiteSup_c, color = factor(copertura_c)), size = 2) +
+  facet_wrap(~ n, scales = "free_y", ncol = 1) +  # Creazione di un pannello per ogni n
+  labs(title = "Intervalli Fiduciali per Valori Attesi di una Distribuzione di Cauchy",
+       x = "Esperimenti",
+       y = "Intervallo Fiduciale",
+       color = "Copertura") +
+  scale_color_manual(values = c("1" = "gray25", "0" = "red"), labels = c("Copertura", "Non Copertura")) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+```
+ 
+## Interpretazione dei risultati
+ 
+ In questo caso, lavorando con una popolazione di Cauchy che ha delle proprietà particolari avendo sia valore atteso che varianza indefinite e con code pesanti, si osserva come per numerosità campionaria pari a 3 l'intervallo fiduciario non è molto affidabile. Aumentando la numerosità però l'intervallo tende ad avere una copertura molto alta fino ad arrivare al $100\%$ per $n = 30\ e\ 50$.
+ 
+
+# Algoritmo di Marsaglia
+
+Siano $U_1$ e $U_2$ due variabili casuali indipendenti uniformi su supporto $\left[-1; 1\right]$
+
+La variabile $U^{2}$ è anch'essa uniformemente distribuita tra $-1\ e\ 1$ poichè somma di $U_{1}^{2}\ e\ U_{2}^{2}$.
+
+L'idea è quella di usare **R** e $\Omega$ per ottenere coordinate normalmente distribuite. <br>**R**$=\sqrt{U_{1}^{2}+U_{2}^{2}}$<br>$\Omega = \tan^{-1}\left(\dfrac{U_{2}}{U_{1}}\right)$<br>**R** rappresenta il raggio del piano polare.
+
+Per arrivare alla distribuzione normale si calcolano X e Y in questo modo:<br>$X = R\cos(\Omega)$<br>$Y = R\sin(\Omega)$
+
+Si va a definire **R** come $\sqrt{-2\ln(U_{1})}$.<br>$U_{1}$ è una variabile casuale uniforme. Si va a trasformarla in **R** attraverso il logaritmo naturale e la funzione esponenziale.<br>Se $U_{1}$ segue una distribuzione uniforme allora $-\ln(U_{1}) \sim Exp(\lambda = 1)$
+**X** e **Y** quindi vengono definiti come<br>$X=\sqrt{-2\ln(U^{2})}\cdot\cos(\Omega) =\sqrt{-2\ln(U^{2})}\cdot U_{1}$<br>$Y=\sqrt{-2\ln(U^{2})}\cdot\sin(\Omega) =\sqrt{-2\ln(U^{2})}\cdot U_{2}$
+
+Sia **X** che **Y** seguono una distribuzione normale
+
+## Dimostrazione
+ Sia **U** una v.c. unifromemente distribuita in $(0, 1)$. La densità di probabilità $f_{U}(u) = \begin{cases} 1\ &se\ 0<u<1\\ 0\ &altrimenti \end{cases}$
+ 
+ Consideriamo $V = -\ln(U)$. Determiniamo la distribuzione di **V**<br>$F_{V}(v) = \mathbb{P}(V\le v) = \mathbb{P}(-\ln(U)\le v) = \mathbb{P}(U\ge e^{-v})$<br>Visto che **U** è uniformemente distribuita su $(0, 1)$ si ha che:<br>$\mathbb{P}(U\ge e^{-v}) = 1- \mathbb{P}(U<e^{-v}) = 1-e^{-v}$<br>Da cui si ha che:<br>$F_{V}(v) = \begin{cases}0\ &se\ v<0\\ 1-e^{-v}\ &se\ v\ge 0 \end{cases}$<br>$f_{V}(v) = \dfrac{d}{dv}F_{V}(v) = \begin{cases} 0\ &se\ v<0\\ e^{-v}\ &se\ v\ge 0 \end{cases}$<br>Quindi **V** segue una distribuzione esponenziale con parametro $\lambda = 1$.
+ 
+Tornando all'algoritmo di Marsaglia abbiamo che $R^{2} = -2\ln(U^{2})$. La variabile $-2\ln(U^{2})$ è una variabile esponenziale di parametro $\lambda = 2$ perche moltiplicato per due. $R^{2}$ invece segue una distribuzoine $\chi^{2}$ con 2 gradi di libertà, che p equivalente ad una distribuzione esponenziale. La radice quadrata di $R^{2}$ quindi rappresenta una distribuzione normale.
